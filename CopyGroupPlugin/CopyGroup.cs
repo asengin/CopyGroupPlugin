@@ -1,12 +1,9 @@
 ﻿using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
+using Autodesk.Revit.DB.Architecture;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Selection;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace CopyGroupPlugin
 {
@@ -15,25 +12,47 @@ namespace CopyGroupPlugin
     {
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
-            UIDocument uiDoc = commandData.Application.ActiveUIDocument;
-            Document doc = uiDoc.Document;
-
-            Reference refToObject = uiDoc.Selection.PickObject(ObjectType.Element, "Выберите группу объектов");
-            Element element = doc.GetElement(refToObject);
-            Group group = element as Group;
-
-            XYZ pointInsert = uiDoc.Selection.PickPoint("Выберите точку вставки");
-
-            using (Transaction tr = new Transaction(doc, "Копирование группы объектов"))
+            try
             {
-                tr.Start();
+                UIDocument uiDoc = commandData.Application.ActiveUIDocument;
+                Document doc = uiDoc.Document;
 
-                doc.Create.PlaceGroup(pointInsert, group.GroupType);
+                GroupPickFilter groupPickFilter = new GroupPickFilter();
+                Reference refToObject = uiDoc.Selection.PickObject(ObjectType.Element, groupPickFilter, "Выберите группу объектов");
+                Element element = doc.GetElement(refToObject);
+                Group group = element as Group;
+                XYZ groupCenter = Utils.GetElementCenter(group);
+                Room room = Utils.GetRoomByPoint(doc, groupCenter);
+                XYZ roomCenter = Utils.GetElementCenter(room);
+                XYZ offset = groupCenter - roomCenter;
 
-                tr.Commit();
+                XYZ pointInsert = uiDoc.Selection.PickPoint("Выберите точку вставки");
+                Room roomInsert = Utils.GetRoomByPoint(doc, pointInsert);
+                XYZ pointCenterInsertRoom = Utils.GetElementCenter(roomInsert);
+                XYZ offsetRoomIns = pointCenterInsertRoom + offset;
+
+                using (Transaction tr = new Transaction(doc, "Копирование группы объектов"))
+                {
+                    tr.Start();
+
+                    doc.Create.PlaceGroup(offsetRoomIns, group.GroupType);
+
+                    tr.Commit();
+                }
+            } 
+
+            catch (OperationCanceledException)
+            {
+                return Result.Cancelled;
             }
-
+            catch (Exception ex)
+            {
+                message = ex.Message;
+                return Result.Failed;
+            }
+            
             return Result.Succeeded;
         }
+        
     }
 }
